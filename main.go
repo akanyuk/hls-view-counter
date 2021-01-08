@@ -13,7 +13,7 @@ var exportStdout bool
 var exportHTTP string
 var exportCollectd string
 
-func init() {
+func Init() {
 	flag.DurationVar(
 		&interval, "interval", 10*time.Second,
 		"Interval between statistics output",
@@ -48,6 +48,8 @@ func init() {
 }
 
 func main() {
+	Init()
+
 	fmt.Printf("Using interval=%s, logFile=%s\n", interval, logFile)
 	counter := newViewCounter(logFile, interval, xmlStatsURL)
 

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -9,19 +8,23 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nxadm/tail"
 )
 
+const viewerLifetime = 10
+
 var streamNameRegex = regexp.MustCompile(`/hls/(?P<streamName>.*)-\d+\.ts`)
 
 type viewCounter struct {
+	m               sync.Mutex
 	logFile         string
 	xmlStatsURL     string
 	interval        time.Duration
 	exporters       []ViewCountExporter
-	streamViewers   map[string]map[string]struct{}
+	streamViewers   map[string]map[string]time.Time
 	exportViews     map[string]int
 	exportUpdatedAt int64
 	http            *http.Client
@@ -32,7 +35,7 @@ func newViewCounter(logFile string, interval time.Duration, xmlStatsURL string) 
 		logFile:       logFile,
 		xmlStatsURL:   xmlStatsURL,
 		interval:      interval,
-		streamViewers: map[string]map[string]struct{}{},
+		streamViewers: map[string]map[string]time.Time{},
 		exportViews:   map[string]int{},
 	}
 
@@ -67,7 +70,7 @@ func (v *viewCounter) readLines(out chan string) {
 		},
 	)
 	if err != nil {
-		log.Printf("%s", err.Error())
+		log.Print(err.Error())
 		return
 	}
 	for line := range t.Lines {
@@ -77,6 +80,10 @@ func (v *viewCounter) readLines(out chan string) {
 
 func (v *viewCounter) processLine(line string) {
 	parts := strings.Split(line, " ")
+	if len(parts) < 7 {
+		return
+	}
+
 	ip := parts[0]
 	url := parts[6]
 
@@ -86,12 +93,15 @@ func (v *viewCounter) processLine(line string) {
 	}
 	streamName := match[1]
 
+	v.m.Lock()
+	defer v.m.Unlock()
+
 	streamViewersPerStream, ok := v.streamViewers[streamName]
 	if !ok {
-		streamViewersPerStream = map[string]struct{}{}
+		streamViewersPerStream = map[string]time.Time{}
 		v.streamViewers[streamName] = streamViewersPerStream
 	}
-	streamViewersPerStream[ip] = struct{}{}
+	streamViewersPerStream[ip] = time.Now()
 }
 
 const rtmpStatStreamStartMarker = "<live>"
@@ -177,10 +187,29 @@ func (v *viewCounter) countViews() {
 					v.exportViews[streamName] = len(hlsViewers)
 				}
 			}
-			fmt.Println()
-
 			v.exportUpdatedAt = time.Now().Unix()
+
+			v.m.Lock()
+			v.streamViewers = removeExpired(v.streamViewers)
+			v.m.Unlock()
+
 			v.updateExporters()
 		}
 	}
+}
+
+func removeExpired(viewers map[string]map[string]time.Time) map[string]map[string]time.Time {
+	expireTime := time.Now().Add(-viewerLifetime * time.Second)
+	result := make(map[string]map[string]time.Time)
+
+	for streamName, streams := range viewers {
+		result[streamName] = make(map[string]time.Time)
+		for ip, t := range streams {
+			if t.After(expireTime) {
+				result[streamName][ip] = t
+			}
+		}
+	}
+
+	return result
 }
