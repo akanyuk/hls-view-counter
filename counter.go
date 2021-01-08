@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 	"github.com/nxadm/tail"
 )
 
-var streamNameRegex = regexp.MustCompile(`\/hls\/(?P<streamName>.*)-\d+\.ts`)
+var streamNameRegex = regexp.MustCompile(`/hls/(?P<streamName>.*)-\d+\.ts`)
 
 type viewCounter struct {
 	logFile         string
@@ -37,7 +38,7 @@ func newViewCounter(logFile string, interval time.Duration, xmlStatsURL string) 
 
 	if counter.xmlStatsURL != "" {
 		counter.http = &http.Client{
-			Timeout: time.Duration(1 * time.Second),
+			Timeout: 1 * time.Second,
 		}
 	}
 
@@ -66,7 +67,8 @@ func (v *viewCounter) readLines(out chan string) {
 		},
 	)
 	if err != nil {
-		fmt.Errorf("%s", err.Error())
+		log.Printf("%s", err.Error())
+		return
 	}
 	for line := range t.Lines {
 		out <- line.Text
@@ -108,7 +110,9 @@ func (v *viewCounter) getRTMPStreamData() map[string]int {
 	if err != nil {
 		return map[string]int{}
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, err := ioutil.ReadAll(resp.Body)
 

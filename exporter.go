@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os/exec"
@@ -20,7 +21,7 @@ type ViewCountExporter interface {
 type stdoutExporter struct {
 }
 
-func (s *stdoutExporter) export(config string) {
+func (s *stdoutExporter) export(_ string) {
 	return
 }
 
@@ -56,10 +57,10 @@ func (h *HttpViewCountExporter) export(config string) {
 	r.HandleFunc(
 		"/views",
 		func(w http.ResponseWriter, r *http.Request) {
-			w.Write(h.views)
+			_, _ = w.Write(h.views)
 		},
 	)
-	http.ListenAndServe(config, r)
+	_ = http.ListenAndServe(config, r)
 }
 
 // Collectd exporter
@@ -81,7 +82,7 @@ func (c *CollectdExporter) getHostname() string {
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		fmt.Errorf(err.Error())
+		log.Printf(err.Error())
 	}
 	fqdn := out.String()
 	fqdn = fqdn[:len(fqdn)-1] // removing EOL
@@ -94,7 +95,7 @@ func (c *CollectdExporter) export(sockAddr string) {
 	c.interval = int(interval.Seconds())
 	c.socket, err = net.Dial(collectdSocketType, sockAddr)
 	if err != nil {
-		fmt.Errorf("%s\n", err.Error())
+		log.Printf("%s\n", err.Error())
 	}
 }
 
@@ -109,6 +110,6 @@ func (c *CollectdExporter) updateViewCount(newViews map[string]int, updatedAt in
 			updatedAt, viewCount,
 		)
 		fmt.Println(statLine)
-		c.socket.Write([]byte(statLine))
+		_, _ = c.socket.Write([]byte(statLine))
 	}
 }

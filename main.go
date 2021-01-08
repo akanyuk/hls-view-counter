@@ -15,7 +15,7 @@ var exportCollectd string
 
 func init() {
 	flag.DurationVar(
-		&interval, "interval", time.Duration(10*time.Second),
+		&interval, "interval", 10*time.Second,
 		"Interval between statistics output",
 	)
 
